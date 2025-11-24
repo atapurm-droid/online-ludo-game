@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>منچ آنلاین</title>
+    <style>
+        /* استایل‌های قبلی + اضافات جدید */
+        
+        .waiting-room {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+            margin-bottom: 20px;
+            max-width: 400px;
+        }
+        
+        .player-list {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 10px;
+            min-height: 100px;
+        }
+        
+        .player-item {
+            padding: 8px;
+            margin: 5px 0;
+            background: #e3f2fd;
+            border-radius: 8px;
+            border-right: 4px solid #2196f3;
+        }
+        
+        .ready-btn {
+            background: linear-gradient(145deg, #4caf50, #2e7d32);
+            color: white;
+            padding: 12px 30px;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            margin: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- اتاق انتظار -->
+<div id="waitingRoom" class="waiting-room">
+    <h2>🎮 اتاق انتظار منچ آنلاین</h2>
+    <div class="player-list" id="playerList">
+        <p>در انتظار بازیکنان...</p>
+    </div>
+    <div id="waitingInfo">
+        <p>موقعیت شما در صف: <span id="position">-</span></p>
+    </div>
+    <button class="ready-btn" onclick="joinWaitingRoom()">آماده بازی هستم! ✅</button>
+</div>
+
+<!-- بازی اصلی (مخفی در ابتدا) -->
+<div id="gameContainer" class="game-container" style="display: none;">
+    <!-- محتوای بازی قبلی -->
+    <div class="timer-box" id="timer-display">⏱️ 40</div>
+    <div class="turn-info" id="turn-text">شروع بازی...</div>
+    
+    <div class="dice-container">
+        <div class="dice-face" id="dice-visual"></div>
+    </div>
+
+    <button id="roll-btn" onclick="rollDice()">تاس بریز</button>
+    
+    <div class="board" id="board">
+        <!-- محتوای بورد بازی -->
+    </div>
+    
+    <div id="onlinePlayers"></div>
+    <p id="msg" style="font-size:0.95rem; color:#555; margin-top:10px;">اتصال...</p>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    // متغیرهای گلوبال
+    let socket = null;
+    let currentRoom = null;
+    let myColor = null;
+
+    // اتصال به سرور
+    function connectToServer() {
+        socket = io();
+        
+        socket.on('connect', () => {
+            console.log('متصل شد به سرور');
+            document.getElementById('msg').innerText = 'متصل به سرور';
+        });
+        
+        socket.on('waiting-status', (data) => {
+            document.getElementById('position').textContent = data.position;
+            updateWaitingList(data.players);
+        });
+        
+        socket.on('game-start', (data) => {
+            startOnlineGame(data);
+        });
+        
+        socket.on('disconnect', () => {
+            document.getElementById('msg').innerText = 'اتصال قطع شد';
+        });
+    }
+
+    function joinWaitingRoom() {
+        if (!socket) connectToServer();
+        
+        const playerName = prompt('نام خود را وارد کنید:', `بازیکن${Math.floor(Math.random() * 1000)}`);
+        socket.emit('join-waiting', { name: playerName || 'بازیکن ناشناس' });
+        
+        document.querySelector('.ready-btn').disabled = true;
+        document.querySelector('.ready-btn').textContent = 'در انتظار... ⏳';
+    }
+
+    function updateWaitingList(players) {
+        const list = document.getElementById('playerList');
+        list.innerHTML = '<h3>بازیکنان حاضر:</h3>';
+        
+        players.forEach((player, index) => {
+            const div = document.createElement('div');
+            div.className = 'player-item';
+            div.textContent = `${index + 1}. ${player.playerName}`;
+            list.appendChild(div);
+        });
+    }
+
+    function startOnlineGame(gameData) {
+        currentRoom = gameData.roomId;
+        myColor = gameData.yourColor;
+        
+        // مخفی کردن اتاق انتظار و نمایش بازی
+        document.getElementById('waitingRoom').style.display = 'none';
+        document.getElementById('gameContainer').style.display = 'block';
+        
+        // نمایش اطلاعات بازیکنان
+        updateOnlinePlayers(gameData.players);
+        
+        // شروع بازی
+        initializeGame();
+        
+        document.getElementById('msg').innerText = `شما ${myColor} هستید. بازی شروع شد!`;
+    }
+
+    function updateOnlinePlayers(players) {
+        const container = document.getElementById('onlinePlayers');
+        container.innerHTML = '<h3>بازیکنان آنلاین:</h3>';
+        
+        players.forEach(player => {
+            const div = document.createElement('div');
+            div.className = 'player-item';
+            div.style.borderRightColor = `var(--${player.color})`;
+            div.textContent = `${player.playerName} (${player.color})`;
+            if (player.color === myColor) {
+                div.style.background = '#e8f5e8';
+                div.textContent += ' 👈 شما';
+            }
+            container.appendChild(div);
+        });
+    }
+
+    // توابع بازی (همانند قبل) با اضافه کردن socket.emit برای حرکات
+    function rollDice() {
+        // ارسال حرکت به سرور
+        socket.emit('player-action', {
+            roomId: currentRoom,
+            action: 'roll-dice',
+            playerColor: myColor
+        });
+    }
+
+    function handleTokenClick(color, id) {
+        if (color !== myColor) return;
+        
+        socket.emit('player-action', {
+            roomId: currentRoom,
+            action: 'move-token',
+            playerColor: myColor,
+            tokenId: id
+        });
+    }
+
+    // اتصال اولیه
+    window.onload = function() {
+        // نمایش اتاق انتظار
+        document.getElementById('waitingRoom').style.display = 'block';
+        document.getElementById('gameContainer').style.display = 'none';
+    };
+</script>
+
+<!-- بقیه اسکریپت‌های بازی -->
+<script>
+// توابع بازی اصلی (همانند فایل قبلی)
+// createBoard, initTokens, rollDice, etc.
+</script>
+
+</body>
+</html>
